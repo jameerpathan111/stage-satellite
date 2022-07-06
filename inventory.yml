@@ -1,0 +1,22 @@
+all:
+  vars:
+
+    # For authentication with Satellite app
+    satellite_username: admin
+    satellite_password: changeme
+    satellite_server_url: 'https://{{ ansible_fqdn }}'
+
+  children:
+    sat611:
+      hosts:
+        &sat611-stage :
+    stage:
+      hosts:
+        #*sat610-stage :  # noqa colons
+        *sat611-stage :  # noqa colons
+      vars:
+        rhsm_username: 
+        rhsm_password: 
+        ansible_user: 
+        ansible_password: 
+
