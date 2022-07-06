@@ -1,0 +1,110 @@
+---
+- name: Register and subscribe host to stage RHSM
+  hosts: stage
+  gather_facts: true
+  tasks:
+    
+    - name: Customize /etc/rhsm/rhsm.conf for hostname
+      ansible.builtin.lineinfile:
+        path: /etc/rhsm/rhsm.conf
+        regexp: '^hostname'
+        line: 'hostname = subscription.rhsm.stage.redhat.com'
+      become: true  
+
+    - name: Configuring CDN URL 
+      ansible.builtin.command: hammer organization configure-cdn --name "Default Organization" --url "http://cdn.stage.redhat.com" --type redhat_cdn
+      register: cdn_check
+      failed_when: cdn_check.rc != 0         
+
+    - name: Register and subscribe host to stage RHSM
+      community.general.redhat_subscription:
+        username: '{{ rhsm_username }}'
+        password: '{{ rhsm_password }}'
+        state: present
+        force_register: true
+        pool_ids: 8a82d2b781940f720181ba45c03d1139
+      become: true
+      when: rhsm_password is defined
+  tags:
+    - configuration
+
+    
+
+
+- name: Configure units on stage satellites
+  hosts: stage
+  tasks:
+
+    - name: Create unit override directories
+      ansible.builtin.file:
+        path: '{{ item }}'
+        state: directory
+        mode: 0755
+        owner: root
+        group: root
+      become: true
+      loop:
+        - /etc/systemd/system/dynflow-sidekiq@.service.d/
+        - /etc/systemd/system/foreman.service.d/
+
+    - name: Install unit override files
+      ansible.builtin.copy:
+        content: |
+          [Service]
+          Environment=SATELLITE_CERT_RH_CLOUD_URL=https://cert.cloud.stage.redhat.com
+          Environment=SATELLITE_INVENTORY_UPLOAD_URL=https://cert.cloud.stage.redhat.com/api/ingress/v1/upload
+          Environment=SATELLITE_LEGACY_INSIGHTS_URL=https://cert.cloud.stage.redhat.com
+          Environment=SATELLITE_RH_CLOUD_SSO_URL=https://sso.stage.redhat.com/auth/realms/redhat-external/protocol/openid-connect/token
+          Environment=SATELLITE_RH_CLOUD_URL=https://cert.cloud.stage.redhat.com
+        dest: '{{ item }}'
+        mode: 0644
+        owner: root
+        group: root
+      notify:
+        - Reload systemd
+        - Restart Satellite
+      become: true
+      loop:
+        - /etc/systemd/system/dynflow-sidekiq@.service.d/override.conf
+        - /etc/systemd/system/foreman.service.d/override.conf
+
+  handlers:
+
+    - name: Reload systemd
+      ansible.builtin.systemd:
+        daemon_reload: true
+
+    - name: Restart Satellite
+      ansible.builtin.command: foreman-maintain service restart
+      become: true
+  tags:
+    - modify
+
+- name: Configure HTTP proxy
+  hosts: stage
+  tasks:
+
+    - name: Create HTTP proxy
+      redhat.satellite.http_proxy:
+        name: stage
+        url: 'http://squid.corp.redhat.com:3128'
+        username: '{{ satellite_username }}'
+        password: '{{ satellite_password }}'
+        server_url: '{{ satellite_server_url }}'
+      notify: Restart Satellite
+
+    - name: Set content_default_http_proxy
+      redhat.satellite.setting:
+        username: '{{ satellite_username }}'
+        password: '{{ satellite_password }}'
+        server_url: '{{ satellite_server_url }}'
+        name: content_default_http_proxy
+        value: stage
+      notify: Restart Satellite
+
+  handlers:
+    - name: Restart Satellite
+      command: foreman-maintain service restart
+      become: true
+  tags:
+    - proxy
