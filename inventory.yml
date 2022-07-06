@@ -3,7 +3,7 @@ all:
 
     # For authentication with Satellite app
     satellite_username: admin
-    satellite_password: changeme
+    satellite_password: 
     satellite_server_url: 'https://{{ ansible_fqdn }}'
 
   children:
