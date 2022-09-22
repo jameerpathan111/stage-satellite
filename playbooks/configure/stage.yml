@@ -1,4 +1,3 @@
----
 - name: Register and subscribe host to stage RHSM
   hosts: stage
   gather_facts: true
@@ -9,12 +8,22 @@
         path: /etc/rhsm/rhsm.conf
         regexp: '^hostname'
         line: 'hostname = subscription.rhsm.stage.redhat.com'
-      become: true  
+      become: true
+      
+      
+      
 
     - name: Configuring CDN URL 
-      ansible.builtin.command: hammer organization configure-cdn --name "Default Organization" --url "http://cdn.stage.redhat.com" --type redhat_cdn
+      ansible.builtin.shell: hammer organization configure-cdn --name "Default Organization" --url "http://cdn.stage.redhat.com" --type redhat_cdn
       register: cdn_check
-      failed_when: cdn_check.rc != 0         
+      
+      
+    - name: Assertion for CDN
+      ansible.builtin.assert:
+        that:
+          -  when: cdn_check.stdout == "Updated CDN configuration."
+       
+           
 
     - name: Register and subscribe host to stage RHSM
       community.general.redhat_subscription:
@@ -22,11 +31,10 @@
         password: '{{ rhsm_password }}'
         state: present
         force_register: true
-        pool_ids: 
+        pool_ids: pool_id to be passed
       become: true
       when: rhsm_password is defined
-  tags:
-    - configuration
+
 
     
 
@@ -77,24 +85,23 @@
     - name: Restart Satellite
       ansible.builtin.command: foreman-maintain service restart
       become: true
-  tags:
-    - modify
+
 
 - name: Configure HTTP proxy
   hosts: stage
   tasks:
 
     - name: Create HTTP proxy
-      redhat.satellite.http_proxy:
+      theforeman.foreman.http_proxy:
         name: stage
-        url: 'http://squid.corp.redhat.com:3128'
+        url: 'http://stage_proxy'
         username: '{{ satellite_username }}'
         password: '{{ satellite_password }}'
         server_url: '{{ satellite_server_url }}'
       notify: Restart Satellite
 
     - name: Set content_default_http_proxy
-      redhat.satellite.setting:
+      theforeman.foreman.setting:
         username: '{{ satellite_username }}'
         password: '{{ satellite_password }}'
         server_url: '{{ satellite_server_url }}'
@@ -106,5 +113,59 @@
     - name: Restart Satellite
       command: foreman-maintain service restart
       become: true
-  tags:
-    - proxy
+  
+- name: manifest creation 
+  hosts: stage
+  tasks:
+
+    - name: Creating manifest on Stage environment
+      theforeman.foreman.redhat_manifest:
+        name: "stage_manifest"
+        username: '{{ rhsm_username }}'
+        password: '{{ rhsm_password }}'
+        pool_id: pool_id
+        quantity: 7
+        portal:  https://subscription.rhsm.stage.redhat.com
+        validate_certs: no
+
+
+- name: manifest export
+  hosts: stage
+  tasks:
+
+    - name: Download manifest on satellite from stage environment
+      theforeman.foreman.redhat_manifest:
+        name: "stage_manifest"
+        username: '{{ rhsm_username }}'
+        password: '{{ rhsm_password }}'
+        pool_id: pool_id
+        quantity: 7
+        portal:  https://subscription.rhsm.stage.redhat.com
+        path : /tmp/manifest.zip
+
+
+- name: manifest upload
+  hosts: stage
+  tasks:
+
+    - name: Uploading the manifest on satellite
+      theforeman.foreman.subscription_manifest:
+        username: '{{ satellite_username }}'
+        password: '{{ satellite_password }}'
+        server_url: '{{ satellite_server_url }}'
+        organization: "Default Organization"
+        state: present
+        manifest_path: "/tmp/manifest.zip"
+
+- name: manifest refresh
+  hosts: stage
+  tasks:
+
+    - name: Refreshing the manifest on satellite
+      theforeman.foreman.subscription_manifest:
+        username: '{{ satellite_username }}'
+        password: '{{ satellite_password }}'
+        server_url: '{{ satellite_server_url }}'
+        organization: "Default Organization"
+        state: refreshed
+        manifest_path: "/tmp/manifest.zip"

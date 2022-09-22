@@ -3,20 +3,20 @@ all:
 
     # For authentication with Satellite app
     satellite_username: admin
-    satellite_password: 
+    satellite_password: satellite_password
     satellite_server_url: 'https://{{ ansible_fqdn }}'
 
   children:
     sat611:
       hosts:
-        &sat611-stage :
+        &sat611-stage #hostname:
+      #ie:&sat611-stage dhcp-x-yz.abc.sat.abc5.redhat.com  # Can pass any vm name [version supported 6.11 and above.]
     stage:
       hosts:
-        #*sat610-stage :  # noqa colons
         *sat611-stage :  # noqa colons
       vars:
-        rhsm_username: 
-        rhsm_password: 
-        ansible_user: 
-        ansible_password: 
+        rhsm_username: stage_username # Redhat Ethel id
+        rhsm_password: stage_password # Redhat Ethel passwd
+        ansible_user: ssh_username
+        ansible_password: ssh_password
 
