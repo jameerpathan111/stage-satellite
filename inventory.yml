@@ -19,4 +19,6 @@ all:
         rhsm_password: stage_password # Redhat Ethel passwd
         ansible_user: ssh_username
         ansible_password: ssh_password
-
+        pool_id: 2c9243c683ae432280183c60a585329f8
+        http_proxy: http://squid.example.com:3128
+        organization: "Default Organization"

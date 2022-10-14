@@ -16,19 +16,18 @@ Installation:
 The playbooks in this directory make heavy use of a collection from Automation Hub. Before
 executing the playbooks, install the collection by doing the following:
 
-1. Get a token, and add it to ansible.cfg.
-
-2. Install dependencies, including redhat.satellite:
+1. Install dependencies:
  
-    ansible-galaxy collection install community.general redhat.satellite
+   `ansible-galaxy collection install community.general`
 
+   `ansible-galaxy collection install git+https://github.com/theforeman/foreman-ansible-modules.git`
+2. Update inventory.yaml
+ 
 Usage:
 
 That done, you can configure the Satellites.
 
-ansible-playbook playbooks/configure/stage.yml -e ansible_fqdn= # hostname to be passed.
-
-
+   `ansible-playbook playbooks/configure/stage.yml -e ansible_fqdn=sat_hostname`
 
 
 

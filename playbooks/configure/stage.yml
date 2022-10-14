@@ -2,28 +2,21 @@
   hosts: stage
   gather_facts: true
   tasks:
-    
     - name: Customize /etc/rhsm/rhsm.conf for hostname
       ansible.builtin.lineinfile:
         path: /etc/rhsm/rhsm.conf
         regexp: '^hostname'
         line: 'hostname = subscription.rhsm.stage.redhat.com'
       become: true
-      
-      
-      
 
     - name: Configuring CDN URL 
-      ansible.builtin.shell: hammer organization configure-cdn --name "Default Organization" --url "http://cdn.stage.redhat.com" --type redhat_cdn
+      ansible.builtin.shell: hammer organization configure-cdn --name '{{ organization }}' --url "http://cdn.stage.redhat.com" --type redhat_cdn
       register: cdn_check
-      
       
     - name: Assertion for CDN
       ansible.builtin.assert:
         that:
           -  when: cdn_check.stdout == "Updated CDN configuration."
-       
-           
 
     - name: Register and subscribe host to stage RHSM
       community.general.redhat_subscription:
@@ -31,18 +24,13 @@
         password: '{{ rhsm_password }}'
         state: present
         force_register: true
-        pool_ids: pool_id to be passed
+        pool_ids: '{{ pool_id }}'
       become: true
       when: rhsm_password is defined
-
-
-    
-
 
 - name: Configure units on stage satellites
   hosts: stage
   tasks:
-
     - name: Create unit override directories
       ansible.builtin.file:
         path: '{{ item }}'
@@ -64,6 +52,7 @@
           Environment=SATELLITE_LEGACY_INSIGHTS_URL=https://cert.cloud.stage.redhat.com
           Environment=SATELLITE_RH_CLOUD_SSO_URL=https://sso.stage.redhat.com/auth/realms/redhat-external/protocol/openid-connect/token
           Environment=SATELLITE_RH_CLOUD_URL=https://cert.cloud.stage.redhat.com
+          Environment=RESTCLIENT_LOG=/tmp/restclient.log
         dest: '{{ item }}'
         mode: 0644
         owner: root
@@ -76,8 +65,36 @@
         - /etc/systemd/system/dynflow-sidekiq@.service.d/override.conf
         - /etc/systemd/system/foreman.service.d/override.conf
 
-  handlers:
+    - name: Overide rhc config file
+      ansible.builtin.copy:
+        content: |
+          # yggdrasil global configuration settings
+          broker = ["wss://connect.cloud.stage.redhat.com:443"]
+          data-host = "cert.cloud.stage.redhat.com"
+          cert-file = "/etc/pki/consumer/cert.pem"
+          key-file = "/etc/pki/consumer/key.pem"
+          log-level = "error"
+        dest: /etc/rhc/config.toml
+        mode: 0644
+        owner: root
+        group: root
+      notify:
+        - Restart Satellite
+      become: true
 
+    - name: Overide cloud_connector/defaults/main.yml
+      ansible.builtin.replace:
+        path: '{{ item }}'
+        regexp: 'cert.cloud.redhat.com'
+        replace: 'cert.cloud.stage.redhat.com'
+      notify:
+        - Restart Satellite
+      become: true
+      loop:
+        - /etc/rhc/config.toml
+        - /var/lib/foreman/red_hat_inventory/uploads/uploader.sh
+
+  handlers:
     - name: Reload systemd
       ansible.builtin.systemd:
         daemon_reload: true
@@ -86,15 +103,13 @@
       ansible.builtin.command: foreman-maintain service restart
       become: true
 
-
 - name: Configure HTTP proxy
   hosts: stage
   tasks:
-
     - name: Create HTTP proxy
       theforeman.foreman.http_proxy:
         name: stage
-        url: 'http://stage_proxy'
+        url: '{{ http_proxy }}'
         username: '{{ satellite_username }}'
         password: '{{ satellite_password }}'
         server_url: '{{ satellite_server_url }}'
@@ -117,28 +132,25 @@
 - name: manifest creation 
   hosts: stage
   tasks:
-
     - name: Creating manifest on Stage environment
       theforeman.foreman.redhat_manifest:
         name: "stage_manifest"
         username: '{{ rhsm_username }}'
         password: '{{ rhsm_password }}'
-        pool_id: pool_id
-        quantity: 7
+        pool_id: '{{  pool_id }}'
+        quantity: 10
         portal:  https://subscription.rhsm.stage.redhat.com
         validate_certs: no
-
 
 - name: manifest export
   hosts: stage
   tasks:
-
     - name: Download manifest on satellite from stage environment
       theforeman.foreman.redhat_manifest:
         name: "stage_manifest"
         username: '{{ rhsm_username }}'
         password: '{{ rhsm_password }}'
-        pool_id: pool_id
+        pool_id: '{{  pool_id }}'
         quantity: 7
         portal:  https://subscription.rhsm.stage.redhat.com
         path : /tmp/manifest.zip
@@ -147,25 +159,23 @@
 - name: manifest upload
   hosts: stage
   tasks:
-
     - name: Uploading the manifest on satellite
       theforeman.foreman.subscription_manifest:
         username: '{{ satellite_username }}'
         password: '{{ satellite_password }}'
         server_url: '{{ satellite_server_url }}'
-        organization: "Default Organization"
+        organization: '{{ organization }}'
         state: present
         manifest_path: "/tmp/manifest.zip"
 
 - name: manifest refresh
   hosts: stage
   tasks:
-
     - name: Refreshing the manifest on satellite
       theforeman.foreman.subscription_manifest:
         username: '{{ satellite_username }}'
         password: '{{ satellite_password }}'
         server_url: '{{ satellite_server_url }}'
-        organization: "Default Organization"
+        organization: '{{ organization }}'
         state: refreshed
         manifest_path: "/tmp/manifest.zip"
