@@ -2,12 +2,19 @@
   hosts: stage
   gather_facts: true
   tasks:
-    - name: Customize /etc/rhsm/rhsm.conf for hostname
-      ansible.builtin.lineinfile:
-        path: /etc/rhsm/rhsm.conf
-        regexp: '^hostname'
-        line: 'hostname = subscription.rhsm.stage.redhat.com'
+    - name: Overide config files
+      ansible.builtin.replace:
+        path: '{{ item }}'
+        regexp: 'redhat.com'
+        replace: 'stage.redhat.com'
+      notify:
+        - Restart Satellite
       become: true
+      loop:
+        - /etc/rhc/config.toml
+        - /var/lib/foreman/red_hat_inventory/uploads/uploader.sh
+        - /etc/rhsm/rhsm.conf
+        - /etc/rhc/config.toml
 
     - name: Configuring CDN URL 
       ansible.builtin.shell: hammer organization configure-cdn --name '{{ organization }}' --url "http://cdn.stage.redhat.com" --type redhat_cdn
@@ -64,35 +71,6 @@
       loop:
         - /etc/systemd/system/dynflow-sidekiq@.service.d/override.conf
         - /etc/systemd/system/foreman.service.d/override.conf
-
-    - name: Overide rhc config file
-      ansible.builtin.copy:
-        content: |
-          # yggdrasil global configuration settings
-          broker = ["wss://connect.cloud.stage.redhat.com:443"]
-          data-host = "cert.cloud.stage.redhat.com"
-          cert-file = "/etc/pki/consumer/cert.pem"
-          key-file = "/etc/pki/consumer/key.pem"
-          log-level = "error"
-        dest: /etc/rhc/config.toml
-        mode: 0644
-        owner: root
-        group: root
-      notify:
-        - Restart Satellite
-      become: true
-
-    - name: Overide cloud_connector/defaults/main.yml
-      ansible.builtin.replace:
-        path: '{{ item }}'
-        regexp: 'cert.cloud.redhat.com'
-        replace: 'cert.cloud.stage.redhat.com'
-      notify:
-        - Restart Satellite
-      become: true
-      loop:
-        - /etc/rhc/config.toml
-        - /var/lib/foreman/red_hat_inventory/uploads/uploader.sh
 
   handlers:
     - name: Reload systemd
